@@ -14,26 +14,28 @@ public partial class VerletIntegration : MonoBehaviour
     bool windBlow;
 
     QuadTree quadTree;
-    Rect r= new Rect(Vector2.zero,Vector2.one*10);
+    Rect r = new Rect(Vector2.zero, Vector2.one * 10);
     Rect qRect = new Rect(Vector2.zero, Vector2.one);
-
+    SpatialHash hash;
     LineRenderer l;
 
     void Start()
     {
         l = GetComponent<LineRenderer>();
-        quadTree = new QuadTree(r,4);
-        int x=size.x>>1;
-        int y=size.y>>1;
+        quadTree = new QuadTree(r, 4);
+        hash = new SpatialHash(1);
+        int x = size.x >> 1;
+        int y = size.y >> 1;
         for (int i = 0; i < size.x; i++)
         {
             for (int j = 0; j < size.y; j++)
             {
-                Vector3 p = new Vector3(x-i, y-j, 0);
+                Vector3 p = new Vector3(x - i, y - j, 0);
 
                 Point point = new Point(p, p, i % 4 == 0 && j == 0);
                 points.Add(point);
                 quadTree.Insert(point);
+                hash.Insert(point.position, i * size.x + j);
             }
         }
         for (int i = 0; i < size.x; i++)
@@ -63,10 +65,15 @@ public partial class VerletIntegration : MonoBehaviour
 
     void Update()
     {
+        hash.Trash();
+        for (int i = 0; i < points.Count; i++)
+        {
+            hash.Insert(points[i].position, i);
+        }
         mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         mousePos.z = 0;
         wind.windSpeed = windSpeed;
-        
+
         if (Input.GetKeyDown(KeyCode.Space)) editMode = !editMode;
         if (Input.GetKeyDown(KeyCode.W))
         {
@@ -77,29 +84,29 @@ public partial class VerletIntegration : MonoBehaviour
         {
             EditMode();
         }
-        for (int i = 0; i < Mathf.Min(l.positionCount,points.Count); i++)
+        for (int i = 0; i < Mathf.Min(l.positionCount, points.Count); i++)
         {
             l.SetPosition(i, points[i].position);
         }
         qRect.x = mousePos.x;
         qRect.y = mousePos.y;
         print(quadTree.Query(qRect).Count);
-    
+
         if (!editMode)
         {
             UpdatePoint();
             foreach (var point in points)
             {
                 if (windBlow && !point.locked)
-                    point.position += wind.wind *Time.deltaTime* Time.deltaTime;
+                    point.position += wind.wind * Time.deltaTime * Time.deltaTime;
             }
-            //UpdateLine();
-            UpdateFluid();
+            UpdateLine();
+            //UpdateFluid();
         }
     }
     private void UpdatePoint()
     {
-        quadTree = new QuadTree(r,4);
+        quadTree = new QuadTree(r, 4);
         for (int i = 0; i < points.Count; i++)
         {
             points[i].UpdatePoint();
@@ -113,22 +120,20 @@ public partial class VerletIntegration : MonoBehaviour
             for (int i = 0; i < lines.Count; i++)
             {
                 lines[order[i]].UpdateLine();
-
             }
         }
     }
     private void UpdateFluid()
     {
         for (int it = 0; it < 5; it++)
-        {            
+        {
             for (int i = 0; i < points.Count; i++)
             {
-                qRect.x= points[i].position.x;
-                qRect.y= points[i].position.y;
-                foreach (Point point in quadTree.Query(qRect))
+                hash.GetGridXY(points[i].position,out int x,out int y);
+                foreach (var item in hash.GetCellElements(x,y,1))
                 {
-                    if (point == points[i]) continue;
-                    points[i].Fluid(point);
+                    if (points[item] == points[i]) continue;
+                    points[i].Fluid(points[item]);
                 }
             }
         }
@@ -209,7 +214,17 @@ public partial class VerletIntegration : MonoBehaviour
             Visualize(quadTree.bottomLeft);
             Visualize(quadTree.bottomRight);
         }
-        Gizmos.DrawWireCube(quadTree.boundingBox.center, quadTree.boundingBox.halfRes*2);
+        Gizmos.DrawWireCube(quadTree.boundingBox.center, quadTree.boundingBox.halfRes * 2);
+
+    }
+    public struct VectorField
+    {
+        Vector3[,] field;
+
+        public VectorField(int size)
+        {
+            field = new Vector3[size, size];
+        }
 
     }
 }
